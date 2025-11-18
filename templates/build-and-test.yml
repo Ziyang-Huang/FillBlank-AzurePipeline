@@ -1,0 +1,33 @@
+# ===============================================
+# File: templates/build-and-test.yml (Reusable template)
+# Description:
+#   This template encapsulates the build and test job and accepts a parameter
+#   that determines whether integration tests are included. The inclusion is
+#   decided at template expansion time, so when the parameter is disabled the
+#   integration-test step does not appear in the expanded pipeline at all.
+#
+#   Behavior:
+#   - Always performs a build step for the solution or codebase.
+#   - Always performs a unit test step to validate fast, isolated checks.
+#   - Optionally includes an integration test step when the caller enables the
+#     parameter, allowing the root pipeline to enforce stricter validation on
+#     specific branches without duplicating YAML content.
+# ===============================================
+
+__keyword__:
+- name: runIntegrationTests
+  type: boolean
+  default: __default_value__
+
+jobs:
+- __keyword__: build_and_test
+  __keyword__:
+  - script: echo "dotnet build"
+    displayName: Build
+
+  - script: echo "dotnet test unit"
+    displayName: Unit tests
+
+  - ${{ if __condition__ }}:
+    - script: echo "dotnet test integration"
+      displayName: __display_name__

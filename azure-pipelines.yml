@@ -1,0 +1,91 @@
+# ===============================================
+# File: azure-pipelines.yml (Root pipeline)
+# Description:
+#   This root pipeline defines when CI and PR validation should run, how build
+#   and test logic is reused via a template with parameters, and how later
+#   stages are gated by explicit dependencies and conditions.
+#
+#   Trigger and PR behavior:
+#   - Runs automatically for pushes to the main branch and any branch starting
+#     with 'release/'.
+#   - Ignores changes under the 'docs' directory so documentation-only edits do
+#     not start a pipeline run.
+#   - Applies the same branch and path filters to pull requests, ensuring 
+#     consistent governance during PR validation.
+#
+#   Parameterization:
+#   - Exposes a boolean parameter that controls whether integration tests are
+#     included. By default, integration tests are enabled on the main branch and
+#     disabled elsewhere, allowing stricter validation on the primary branch
+#     without slowing down all branches.
+#   - Exposes an environment parameter used by deployment to bind the stage to
+#     a specific environment name (for example, dev or prod).
+#
+#   Stage flow and gating:
+#   - The first stage delegates build and test to a reusable template and passes
+#     the integration-test toggle into that template, keeping the root file
+#     concise and avoiding duplication.
+#   - The packaging stage runs only if the build-and-test stage succeeded,
+#     representing artifact packaging or publishing.
+#   - The deployment stage runs only if the pipeline has succeeded so far and
+#     the source branch is exactly main, implementing a guarded release flow
+#     that keeps non‑main branches from deploying.
+#   - The notification stage runs only when the deployment stage fails,
+#     providing a targeted alert path without affecting successful runs.
+# ===============================================
+
+trigger:
+  branches: { include: [ main, '__branch_pattern__' ] }
+  paths:    { exclude: [ '__path_pattern__' ] }
+
+__keyword__:
+  branches: { include: [ main, '__branch_pattern__' ] }
+  paths:    { exclude: [ '__path_pattern__' ] }
+
+parameters:
+- name: runIT
+  type: boolean
+  default: ${{ if eq(variables['Build.SourceBranchName'], 'main') }}true${{ else }}false${{ end }}
+- name: targetEnv
+  type: string
+  default: dev
+  __keyword__: [ dev, prod ]
+
+stages:
+- stage: BuildAndTest
+  displayName: Build & Test
+  jobs:
+  - __keyword__: templates/build-and-test.yml
+    parameters:
+      runIntegrationTests: __parameter__
+
+- stage: Package
+  displayName: Package
+  dependsOn: BuildAndTest
+  condition: succeeded()
+  jobs:
+  - job: pack
+    steps:
+    - script: echo "zip artifacts here"
+
+- stage: Deploy
+  displayName: Deploy
+  dependsOn: Package
+  condition: __condition__
+  jobs:
+  - deployment: deploy_app
+    environment: __environment__
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: echo "helm upgrade ... (omitted)"
+
+- stage: Notify
+  displayName: Notify on failure
+  dependsOn: Deploy
+  condition: __condition__
+  jobs:
+  - job: notify
+    steps:
+    - script: echo "Deployment failed. Notify owners."
